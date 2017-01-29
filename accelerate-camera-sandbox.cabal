@@ -1,0 +1,67 @@
+name:                accelerate-camera-sandbox
+version:             0.1.0.0
+synopsis:            Initial project template from stack
+description:         Please see README.md
+homepage:            https://github.com/githubuser/accelerate-camera-sandbox#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Charles Durham, The Accelerate Team
+maintainer:          cpdurham@gmail.com
+copyright:           Charles Durham, The Accelerate Team
+category:            Web
+build-type:          Simple
+-- extra-source-files:
+cabal-version:       >=1.24
+
+library
+  hs-source-dirs:      src
+  ghc-options:         -O2
+  exposed-modules:     ColorCamera
+                     , Acc.Gaussian
+                     , Acc.Gradient
+                     , Acc.Lift
+                     , Acc.Stencil
+                     , Acc.Transpose
+                     , Acc.Types
+                     , Fluid.Fluid
+                     , Fluid.Pipe
+                     , Fluid.Type
+                     , InputArray
+  build-depends:       base >= 4.7 && < 5
+                     , colour-accelerate
+                     , accelerate
+                     , accelerate-llvm-ptx
+                     , accelerate-io
+                     , fclabels
+                     , data-default
+                     , linear
+                     , pipes
+                     , vector
+  default-language:    Haskell2010
+
+executable camera-sandbox-exe
+  hs-source-dirs:      app/camera-sandbox
+  other-modules:       Config
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -O2
+  build-depends:       base
+                     , accelerate
+                     , accelerate-llvm-ptx
+                     , accelerate-io
+                     , clock
+                     , colour-accelerate
+                     , fclabels
+                     , formatting
+                     , data-default
+                     , OpenGL
+                     , pipes
+                     , linear
+                     , GLFW-b
+                     , vector
+                     , huvc
+                     , accelerate-camera-sandbox
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/githubuser/accelerate-camera-sandbox

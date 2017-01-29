@@ -1,0 +1,272 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE PatternGuards    #-}
+{-# LANGUAGE TemplateHaskell  #-}
+--
+-- Configuration parameters
+--
+
+module Fluid.Config where
+
+import Fluid.Type
+
+import Data.Label
+import Control.Monad
+import Prelude                                          as P
+import Data.Array.Accelerate                            as A
+import Data.Array.Accelerate.IO                         as A
+import Data.Array.Accelerate.LLVM.PTX                       as C
+
+import System.Console.GetOpt
+import System.Environment (getArgs)
+
+
+data Initial a
+    = FromFile          FilePath
+    | FromFunction      (Int -> Int -> a)
+
+data Source = Camera | Mouse | Leap
+  deriving (Show,Read)
+
+data Config = Config
+  {
+    -- simulation
+    _viscosity          :: !Float
+  , _diffusion          :: !Float
+  , _timestep           :: !Float
+  , _inputDensity       :: !Float
+  , _inputVelocity      :: !Float
+  , _simulationSteps    :: !Int
+  , _simulationWidth    :: !Int
+  , _simulationHeight   :: !Int
+
+  -- visualisation
+  , _displayScale       :: !Int
+  , _displayFramerate   :: !Int
+  , _initialDensity     :: DensityField
+  , _initialVelocity    :: VelocityField
+  , _initialPicture     :: Pic
+  , _inputSource          :: !Source
+
+  -- extra options to specify initial conditions for command parsing
+  , _setupDensity       :: Initial DensityField
+  , _setupVelocity      :: Initial VelocityField
+  }
+
+$(mkLabels [''Config])
+
+
+
+defaults :: Config
+defaults = Config
+  { _viscosity          = 0
+  , _diffusion          = 0
+  , _timestep           = 0.1
+  , _inputDensity       = 50
+  , _inputVelocity      = 20
+  , _simulationSteps    = 40
+  , _simulationWidth    = 100
+  , _simulationHeight   = 100
+
+  , _displayScale       = 1
+  , _displayFramerate   = 25
+  , _initialDensity     = error "initial density??"
+  , _initialVelocity    = error "initial velocity??"
+  , _initialPicture     = error "initial picture??"
+  , _inputSource          = Mouse
+
+  , _setupDensity       = FromFunction makeField_empty
+  , _setupVelocity      = FromFunction makeField_empty
+  }
+
+
+-- | The set of available command-line options
+--
+options :: [OptDescr (Config -> Config)]
+options =
+  -- Simulation options
+  [ Option  [] ["viscosity"]
+            (ReqArg (parse viscosity) "FLOAT")
+            (describe viscosity "viscosity for velocity damping")
+
+  , Option  [] ["diffusion"]
+            (ReqArg (parse diffusion) "FLOAT")
+            (describe diffusion "diffusion rate for mass dispersion")
+
+  , Option  [] ["delta"]
+            (ReqArg (parse timestep) "FLOAT")
+            (describe timestep "simulation time between each frame")
+
+  , Option  [] ["density"]
+            (ReqArg (parse inputDensity) "FLOAT")
+            (describe inputDensity "magnitude of user input density")
+
+  , Option  [] ["velocity"]
+            (ReqArg (parse inputVelocity) "FLOAT")
+            (describe inputVelocity "magnitude of user input velocity")
+
+  , Option  [] ["iterations"]
+            (ReqArg (parse simulationSteps) "INT")
+            (describe simulationSteps "number of iterations of the linear solver")
+
+  , Option  [] ["width"]
+            (ReqArg (parse simulationWidth) "INT")
+            (describe simulationWidth "grid width of simulation")
+
+  , Option  [] ["height"]
+            (ReqArg (parse simulationHeight) "INT")
+            (describe simulationHeight "grid height of simulation")
+
+  , Option  [] ["source"]
+            (ReqArg (parse inputSource) "Camera|Mouse|Leap")
+            (describe inputSource "input source to fluid")
+
+  -- Display options
+  , Option  [] ["scale"]
+            (ReqArg (parse displayScale) "INT")
+            (describe displayScale "feature size of visualisation")
+
+  , Option  [] ["framerate"]
+            (ReqArg (parse displayFramerate) "INT")
+            (describe displayFramerate "frame rate for visualisation")
+
+  -- Initial conditions
+  , Option  [] ["bmp-density"]
+            (ReqArg (set setupDensity . FromFile) "FILE.bmp")
+            "file for initial fluid density"
+
+  , Option  [] ["bmp-velocity"]
+            (ReqArg (set setupVelocity . FromFile) "FILE.bmp")
+            "file for initial fluid velocity"
+
+  , Option  [] ["init-checks"]
+            (NoArg init_checks)
+            "initial density field with zero velocity field"
+
+  , Option  [] ["init-man"]
+            (NoArg init_man)
+            "initial density field with swirling velocity"
+
+  , Option  [] ["init-elk"]
+            (NoArg init_elk)
+            "initial density field with swirling velocity"
+  ]
+  where
+    parse f x           = set f (read x)
+    describe f msg      = msg P.++ " (" P.++ show (get f defaults) P.++ ")"
+
+    init_checks         = set setupDensity  (FromFunction makeDensity_checks)
+                        . set setupVelocity (FromFunction makeField_empty)
+
+    init_man            = set setupDensity  (FromFunction makeDensity_checks)
+                        . set setupVelocity (FromFunction makeVelocity_man)
+
+    init_elk            = set setupDensity  (FromFunction makeDensity_checks)
+                        . set setupVelocity (FromFunction makeVelocity_elk)
+
+
+parseArgs :: IO Config
+parseArgs =
+  do
+    args <- getArgs
+    let (actions,_,_) = getOpt RequireOrder options args
+        opts = foldr (\f c -> f c) defaults actions
+    initialiseConfig opts
+
+
+header :: [String]
+header =
+  [ "accelerate-fluid (c) [2011..2013] The Accelerate Team"
+  , ""
+  , "Usage: accelerate-fluid [OPTIONS]"
+  , ""
+  ]
+
+footer :: [String]
+footer =
+  [ ""
+  , "Runtime usage:"
+  , "     click        add density sources to the image"
+  , "     shift-click  add velocity sources"
+  , "     r            reset the image"
+  , "     d            toggle display of density field"
+  , "     v            toggle display of velocity field lines"
+  , ""
+  ]
+
+
+-- Initial conditions
+-- ------------------
+
+initialiseConfig :: Config -> IO Config
+initialiseConfig conf = do
+  let
+    width     = get simulationWidth conf
+    height    = get simulationHeight conf
+
+  dens  <- case get setupDensity conf of
+--              FromFile fn       -> loadDensity_bmp fn width height
+              FromFunction f    -> return (f width height)
+
+  velo  <- case get setupVelocity conf of
+--              FromFile fn       -> loadVelocity_bmp fn width height
+              FromFunction f    -> return (f width height)
+
+
+
+  let
+    pic = A.fromList (Z :. height :. width) $ repeat (0,0,0)
+    conf'     = set initialDensity  dens
+                . set initialVelocity velo
+                . set initialPicture pic
+                $ conf
+
+  return conf'
+
+
+makeField_empty :: FieldElt e => Int -> Int -> Field e
+makeField_empty width height
+  = run $ A.fill (constant (Z:.height:.width)) (constant zero)
+
+
+makeDensity_checks :: Int -> Int -> DensityField
+makeDensity_checks width height
+  = let width'  = constant $ P.fromIntegral width
+        height' = constant $ P.fromIntegral height
+        yc      = constant $ P.fromIntegral (height `div` 2)
+        xc      = constant $ P.fromIntegral (width  `div` 2)
+
+        checks ix
+          = let Z :. y :. x     = unlift ix
+                x'              = A.fromIntegral x
+                y'              = A.fromIntegral y
+                tx              = 10 * (x' - xc) / width'
+                ty              = 10 * (y' - yc) / height'
+                xk1             = abs tx A.> 3*pi/2 ? (0 , cos tx)
+                yk1             = abs ty A.> 3*pi/2 ? (0 , cos ty)
+                d1              = xk1 * yk1
+            in
+            0 `A.max` d1
+    in
+    run $ A.generate (constant (Z:.height:.width)) checks
+
+makeVelocity_elk ::  Int -> Int -> VelocityField
+makeVelocity_elk width height
+  = let width'  = constant $ P.fromIntegral width
+        height' = constant $ P.fromIntegral height
+        yc      = constant $ P.fromIntegral (height `div` 2)
+        xc      = constant $ P.fromIntegral (width  `div` 2)
+
+        elk ix
+          = let Z :. y :. x     = unlift ix
+                x'              = A.fromIntegral x
+                y'              = A.fromIntegral y
+                tx              = 12 * (x' - xc) / width'
+                ty              = 12 * (y' - yc) / height'
+                xk2             =  cos tx
+                yk2             = -cos ty
+                d2              = xk2 * yk2 / 5
+            in
+            lift (constant 0, d2)
+    in
+    run $ A.generate (constant (Z:.height:.width)) elk
+

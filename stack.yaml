@@ -1,0 +1,56 @@
+resolver: lts-7.17
+compiler: ghc-8.0.2
+
+packages:
+- '.'
+
+- location:
+    git: https://github.com/cpdurham/huvc.git
+    commit: 3b36c12beadf2870e79e99cf9a887c3e75bfbaf2
+  extra-dep: true
+
+- location:
+    git: https://github.com/AccelerateHS/accelerate.git
+    commit: 08d63ed03a8224000906f11d05afeafb3c6d977e
+  extra-dep: true
+
+- location:
+    git: https://github.com/AccelerateHS/accelerate-llvm.git
+    commit: 954ffc6e17c6559d9e0d57df77cbb50d98228e97
+  extra-dep: true
+  subdirs:
+    - 'accelerate-llvm'
+    - 'accelerate-llvm-native'
+    - 'accelerate-llvm-ptx'
+
+- location:
+    git:    https://github.com/tmcdonell/colour-accelerate.git
+    commit: eac97f41a88ca7d7f4576fd4e41f04b57f106453
+  extra-dep: true
+
+- location:
+    git:   https://github.com/AccelerateHS/accelerate-io.git
+    commit: f4c84a5c961345bf65059f555f21c6e8bf3070a1
+  extra-dep: true
+- location:
+    git:    https://github.com/bscarlet/llvm-general.git
+    #commit: 529f9bf117b5ffd1ccf7ebeb679a97b3b1c67938 #3.8
+    commit: ec1ad5bd2112e7f64dbb43441b5e2075cf6ad8e7 # 3.9
+  extra-dep: true
+  subdirs:
+    - 'llvm-general'
+    - 'llvm-general-pure'
+
+extra-deps:
+- 'unique-0'
+- 'cuda-0.7.5.2'
+- 'chaselev-deque-0.5.0.5'
+- 'nvvm-0.7.5.1'
+
+flags:
+  accelerate-llvm-ptx:
+    nvvm: false
+  llvm-general:
+    shared-llvm: true
+
+extra-package-dbs: []
