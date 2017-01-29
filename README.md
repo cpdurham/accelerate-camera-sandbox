@@ -9,10 +9,10 @@ Only tested on Ubuntu 16.04, cuda 8 on a Titan X (Pascal)
 
 After stack install, get usage with ```camera-sandbox-exe --help```
 
-Demo video here:
+Demo video here (1:39):
 
 [![Demo](https://img.youtube.com/vi/og7VCyBso3M/0.jpg)](https://www.youtube.com/watch?v=og7VCyBso3M)
 
-Extended fluid demo video here:
+Extended fluid only demo video here (2:29):
 
 [![Demo](https://img.youtube.com/vi/NGpU9ThkPnQ/0.jpg)](https://www.youtube.com/watch?v=NGpU9ThkPnQ)
