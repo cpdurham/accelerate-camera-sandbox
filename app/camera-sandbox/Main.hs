@@ -21,9 +21,10 @@ import Graphics.Rendering.OpenGL as GL hiding (get)
 import qualified Graphics.UI.GLFW as G
 
 import Pipes
+import qualified Pipes.Prelude                          as Pipes
 import Prelude                                          as P
 import Data.Array.Accelerate                            as A hiding ((>->),(||),(&&),(>=),(==),(<))
-import Data.Array.Accelerate.IO (toVectors)
+import Data.Array.Accelerate.IO (toVectors,fromVectors)
 
 import System.Exit
 import System.IO
@@ -77,7 +78,7 @@ main = do
     simtype   = get simType conf
     source    = get inputSource conf
     colorationMethod = get coloration conf
-    
+
     idf       = get initialDensity conf
     ivf       = get initialVelocity conf
 
@@ -120,13 +121,16 @@ main = do
         do
           camera <-
             do
-              mcamera <- cameraArrayProducer width height
+              mcamera <- cameraProducer width height
               case mcamera of
                 Nothing ->
                   do
                     putStrLn "Failed to find a camera, closing..."
                     exitFailure
-                Just camera -> return camera
+                Just (_,camera) ->
+                  do
+                    let dim = Z :. height :. width :. 3
+                    return (camera >-> Pipes.map (fromVectors dim))
           case simtype of
             Fluid ->
               let pipe = fluidPipe idf ivf $ colorationPipe . fluid steps dt dp dn . fromDoublePic
